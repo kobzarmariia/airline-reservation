@@ -29,6 +29,10 @@ A pet project built to learn and apply **Domain-Driven Design (DDD)** principles
 - Loyalty Program
 - Notifications
 
+## Core domain
+
+Reservation
+
 ## Project Status
 
 🚧 Work in progress.
