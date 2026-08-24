@@ -1,12 +1,13 @@
 import { Flight } from './flight.aggregate';
 import { it, describe, expect } from '@jest/globals';
-import { Seat, SeatStatus } from './seat.entity';
+import { Seat } from './seat.entity';
 import { FlightId } from '../value-objects/flight-id.vo';
 import { FlightNumber } from '../value-objects/flight-number.vo';
 import { Route } from '../value-objects/route.vo';
 import { Schedule } from '../value-objects/schedule.vo';
 import { Capacity } from '../value-objects/capacity.vo';
 import { SeatNumber } from '../value-objects/seat-number.vo';
+import { SeatStatus } from '../value-objects/seat-status.vo';
 import { SeatsHeld } from '../events/seats-held.event';
 import { SeatsReleased } from '../events/seats-released.event';
 import { SeatsOccupied } from '../events/seats-occupied.event';

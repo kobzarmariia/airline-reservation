@@ -1,11 +1,6 @@
 import { SeatNumber } from '../value-objects/seat-number.vo';
 import { SeatClass } from '../value-objects/seat-class.vo';
-
-export enum SeatStatus {
-  AVAILABLE = 'AVAILABLE',
-  HELD = 'HELD',
-  OCCUPIED = 'OCCUPIED',
-}
+import { SeatStatus } from '../value-objects/seat-status.vo';
 
 export class Seat {
   private status: SeatStatus = SeatStatus.AVAILABLE;
@@ -19,6 +14,20 @@ export class Seat {
 
   static create(seatNumber: SeatNumber, seatClass: SeatClass): Seat {
     return new Seat(seatNumber, seatClass);
+  }
+
+  static reconstitute(
+    seatNumber: SeatNumber,
+    seatClass: SeatClass,
+    status: SeatStatus,
+    holdId: string | null,
+    holdExpiresAt: Date | null,
+  ): Seat {
+    const seat = new Seat(seatNumber, seatClass);
+    seat.status = status;
+    seat.holdId = holdId;
+    seat.holdExpiresAt = holdExpiresAt;
+    return seat;
   }
 
   isAvailable(): boolean {
@@ -49,6 +58,10 @@ export class Seat {
 
   getStatus(): SeatStatus {
     return this.status;
+  }
+
+  getHoldId(): string | null {
+    return this.holdId;
   }
 
   getHoldExpiry(): Date | null {

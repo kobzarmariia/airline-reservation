@@ -41,6 +41,22 @@ export class Flight {
     return new Flight(id, flightNumber, route, schedule, capacity, seatMap);
   }
 
+  // Rebuilds a Flight from persisted state without emitting domain creation events.
+  static reconstitute(
+    id: FlightId,
+    flightNumber: FlightNumber,
+    route: Route,
+    schedule: Schedule,
+    capacity: Capacity,
+    seats: Seat[],
+  ): Flight {
+    const seatMap = new Map<string, Seat>();
+    for (const seat of seats) {
+      seatMap.set(seat.seatNumber.value, seat);
+    }
+    return new Flight(id, flightNumber, route, schedule, capacity, seatMap);
+  }
+
   getId(): FlightId {
     return this.id;
   }

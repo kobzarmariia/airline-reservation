@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+type SeatModel {
+  seatNumber    String
+  seatClass     String // "ECONOMY" | "BUSINESS" | "FIRST"
+  status        String // "AVAILABLE" | "HELD" | "OCCUPIED"
+  holdId        String?
+  holdExpiresAt DateTime?
+}
+
+model FlightModel {
+  id           String @id @default(auto()) @map("_id") @db.ObjectId
+  domainId     String @unique
+  flightNumber String
+
+  // Flat route & schedule fields
+  originAirport String
+  destAirport   String
+  departureTime DateTime
+  arrivalTime   DateTime
+
+  // Capacity stored as raw numbers
+  economyCapacity  Int @default(0)
+  businessCapacity Int @default(0)
+  firstCapacity    Int @default(0)
+
+  // Embedded seats array
+  seats SeatModel[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([flightNumber])
+  @@index([departureTime])
+  @@map("flights")
+}
