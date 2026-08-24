@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { FlightRepositoryPort } from '../../domain/repositories/flight.repository.interface';
 import { Flight } from '../../domain/models/flight.aggregate';
@@ -9,10 +8,7 @@ import { FlightMapper } from './flight.mapper';
 
 @Injectable()
 export class PrismaFlightRepository implements FlightRepositoryPort {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly eventEmitter: EventEmitter2,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async save(flight: Flight): Promise<void> {
     const data = FlightMapper.toPersistence(flight);
@@ -22,8 +18,6 @@ export class PrismaFlightRepository implements FlightRepositoryPort {
       create: data,
       update: data,
     });
-
-    this.dispatchDomainEvents(flight);
   }
 
   async findById(id: FlightId): Promise<Flight | null> {
@@ -50,12 +44,5 @@ export class PrismaFlightRepository implements FlightRepositoryPort {
     });
 
     return raw ? FlightMapper.toDomain(raw) : null;
-  }
-
-  private dispatchDomainEvents(flight: Flight): void {
-    const events = flight.pullDomainEvents();
-    for (const event of events) {
-      this.eventEmitter.emit(event.constructor.name, event);
-    }
   }
 }
