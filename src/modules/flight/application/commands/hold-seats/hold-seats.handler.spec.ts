@@ -14,6 +14,7 @@ import { SeatNumber } from '../../../domain/value-objects/seat-number.vo';
 import { SeatsHeld } from '../../../domain/events/seats-held.event';
 import { FlightNotFoundException } from '../../../domain/exceptions/flight-not-found.exception';
 import { SeatNotAvailableException } from '../../../domain/exceptions/seat-not-available.exception';
+import { DEFAULT_HOLD_DURATION_MINUTES } from '../../../domain/policies/seat-hold.policy';
 
 class InMemoryFlightRepository implements FlightRepositoryPort {
   private readonly flightsById = new Map<string, Flight>();
@@ -67,17 +68,29 @@ describe('HoldSeatsHandler', () => {
     );
   });
 
-  it('holds the requested seats, persists the flight, and dispatches SeatsHeld', async () => {
+  it('holds the requested seats, persists the flight, resolves expiresAt via the domain policy, and dispatches SeatsHeld', async () => {
     flightRepository.seed(buildFlight());
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const command = new HoldSeatsCommand({
       flightId: 'flight-1',
       seatNumbers: ['1A'],
       holdId: 'hold-1',
-      expiresAt,
     });
 
-    await handler.execute(command);
+    const beforeCall = Date.now();
+    const result = await handler.execute(command);
+    const afterCall = Date.now();
+
+    // The handler doesn't receive expiresAt from the caller — it captures
+    // "now" and lets the domain (SeatHoldPolicy, via Flight.holdSeats)
+    // decide how long the hold lasts, so we assert against that window
+    // rather than an exact caller-supplied value.
+    const expectedDurationMs = DEFAULT_HOLD_DURATION_MINUTES * 60 * 1000;
+    expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      beforeCall + expectedDurationMs,
+    );
+    expect(result.expiresAt.getTime()).toBeLessThanOrEqual(
+      afterCall + expectedDurationMs,
+    );
 
     expect(flightRepository.save).toHaveBeenCalledTimes(1);
     const savedFlight = flightRepository.save.mock.calls[0][0];
@@ -94,7 +107,7 @@ describe('HoldSeatsHandler', () => {
       flightId: 'flight-1',
       holdId: 'hold-1',
       seatNumbers: ['1A'],
-      expiresAt,
+      expiresAt: result.expiresAt,
     });
   });
 
@@ -103,7 +116,6 @@ describe('HoldSeatsHandler', () => {
       flightId: 'missing-flight',
       seatNumbers: ['1A'],
       holdId: 'hold-1',
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
     });
 
     await expect(handler.execute(command)).rejects.toThrow(
@@ -115,11 +127,7 @@ describe('HoldSeatsHandler', () => {
 
   it('propagates domain invariant violations without persisting or dispatching', async () => {
     const flight = buildFlight();
-    flight.holdSeats(
-      [SeatNumber.create('1A')],
-      'existing-hold',
-      new Date(Date.now() + 15 * 60 * 1000),
-    );
+    flight.holdSeats([SeatNumber.create('1A')], 'existing-hold', new Date());
     flight.pullDomainEvents();
     flightRepository.seed(flight);
 
@@ -127,7 +135,6 @@ describe('HoldSeatsHandler', () => {
       flightId: 'flight-1',
       seatNumbers: ['1A'],
       holdId: 'hold-2',
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
     });
 
     await expect(handler.execute(command)).rejects.toThrow(

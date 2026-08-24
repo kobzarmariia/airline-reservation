@@ -11,6 +11,7 @@ import { SeatsOccupied } from '../events/seats-occupied.event';
 import { FlightAlreadyDepartedException } from '../exceptions/flight-already-departed.exception';
 import { SeatNotFoundException } from '../exceptions/seat-not-found.exception';
 import { SeatNotAvailableException } from '../exceptions/seat-not-available.exception';
+import { SeatHoldPolicy } from '../policies/seat-hold.policy';
 
 export type FlightDomainEvent = SeatsHeld | SeatsReleased | SeatsOccupied;
 
@@ -81,11 +82,7 @@ export class Flight {
     return Array.from(this.seats.values());
   }
 
-  public holdSeats(
-    seatNumbers: SeatNumber[],
-    holdId: string,
-    expiresAt: Date,
-  ): void {
+  public holdSeats(seatNumbers: SeatNumber[], holdId: string, now: Date): Date {
     if (this.schedule.hasDeparted()) {
       throw new FlightAlreadyDepartedException();
     }
@@ -101,6 +98,10 @@ export class Flight {
       }
     }
 
+    // How long a hold lasts is a domain rule, not something the caller
+    // supplies — the aggregate is the single source of truth for it.
+    const expiresAt = SeatHoldPolicy.resolveExpiresAt(now);
+
     // State transition: Mark seats as HELD
     for (const seatNumber of seatNumbers) {
       const seat = this.seats.get(seatNumber.value)!;
@@ -115,6 +116,8 @@ export class Flight {
         expiresAt,
       ),
     );
+
+    return expiresAt;
   }
 
   public releaseSeats(seatNumbers: SeatNumber[], holdId: string): void {
