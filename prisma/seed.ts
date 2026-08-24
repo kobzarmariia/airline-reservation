@@ -1,19 +1,19 @@
 import { randomUUID } from 'crypto';
 import { PrismaClient } from '@prisma/client';
-import { Flight } from '../src/flight/domain/models/flight.aggregate';
-import { Seat } from '../src/flight/domain/models/seat.entity';
-import { FlightId } from '../src/flight/domain/value-objects/flight-id.vo';
-import { FlightNumber } from '../src/flight/domain/value-objects/flight-number.vo';
-import { Route } from '../src/flight/domain/value-objects/route.vo';
-import { Schedule } from '../src/flight/domain/value-objects/schedule.vo';
+import { Flight } from '../src/modules/flight/domain/models/flight.aggregate';
+import { Seat } from '../src/modules/flight/domain/models/seat.entity';
+import { FlightId } from '../src/modules/flight/domain/value-objects/flight-id.vo';
+import { FlightNumber } from '../src/modules/flight/domain/value-objects/flight-number.vo';
+import { Route } from '../src/modules/flight/domain/value-objects/route.vo';
+import { Schedule } from '../src/modules/flight/domain/value-objects/schedule.vo';
 import {
   Capacity,
   CapacityBySeatClass,
-} from '../src/flight/domain/value-objects/capacity.vo';
-import { SeatNumber } from '../src/flight/domain/value-objects/seat-number.vo';
-import { SeatClass } from '../src/flight/domain/value-objects/seat-class.vo';
-import { SeatStatus } from '../src/flight/domain/value-objects/seat-status.vo';
-import { FlightMapper } from '../src/flight/infrastructure/persistence/flight.mapper';
+} from '../src/modules/flight/domain/value-objects/capacity.vo';
+import { SeatNumber } from '../src/modules/flight/domain/value-objects/seat-number.vo';
+import { SeatClass } from '../src/modules/flight/domain/value-objects/seat-class.vo';
+import { SeatStatus } from '../src/modules/flight/domain/value-objects/seat-status.vo';
+import { FlightMapper } from '../src/modules/flight/infrastructure/persistence/flight.mapper';
 
 const prisma = new PrismaClient();
 
