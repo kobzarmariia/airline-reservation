@@ -20,6 +20,26 @@ export interface ProcessPaymentFailure {
 export type ProcessPaymentResult =
   ProcessPaymentSuccess | ProcessPaymentFailure;
 
+export interface RefundPaymentInput {
+  paymentId: string;
+  amount: number;
+  currency: string;
+  reason: string;
+}
+
+export interface RefundPaymentSuccess {
+  readonly success: true;
+  readonly refundId: string;
+}
+
+export interface RefundPaymentFailure {
+  readonly success: false;
+  readonly failureReason: string;
+}
+
+export type RefundPaymentResult = RefundPaymentSuccess | RefundPaymentFailure;
+
 export interface PaymentGatewayPort {
   charge(input: ProcessPaymentInput): Promise<ProcessPaymentResult>;
+  refund(input: RefundPaymentInput): Promise<RefundPaymentResult>;
 }

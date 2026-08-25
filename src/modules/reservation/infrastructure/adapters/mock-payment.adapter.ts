@@ -4,6 +4,8 @@ import {
   PaymentGatewayPort,
   ProcessPaymentInput,
   ProcessPaymentResult,
+  RefundPaymentInput,
+  RefundPaymentResult,
 } from '../../application/ports/payment-gateway.port';
 
 const FAILING_TOKEN = 'tok_fail';
@@ -31,6 +33,15 @@ export class MockPaymentAdapter implements PaymentGatewayPort {
     return {
       success: true,
       paymentId: `pay_mock_${randomUUID()}`,
+    };
+  }
+
+  async refund(input: RefundPaymentInput): Promise<RefundPaymentResult> {
+    await this.simulateLatency();
+
+    return {
+      success: true,
+      refundId: `ref_mock_${randomUUID()}_${input.paymentId}`,
     };
   }
 

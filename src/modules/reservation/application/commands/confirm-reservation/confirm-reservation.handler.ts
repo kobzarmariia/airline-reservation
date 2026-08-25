@@ -9,6 +9,7 @@ import { ReservationNotFoundException } from '../../../domain/exceptions/reserva
 import { PAYMENT_GATEWAY_PORT } from '../../ports/payment-gateway.port';
 import type { PaymentGatewayPort } from '../../ports/payment-gateway.port';
 import { PaymentFailedException } from '../../exceptions/payment-failed.exception';
+import { SeatConfirmationFailedException } from '../../exceptions/seat-confirmation-failed.exception';
 import { ConfirmSeatsCommand } from '../../../../flight/application/commands/confirm-seats/confirm-seats.command';
 import { ConfirmReservationCommand } from './confirm-reservation.command';
 import { ConfirmReservationResult } from './confirm-reservation.result';
@@ -52,12 +53,26 @@ export class ConfirmReservationHandler implements ICommandHandler<
 
     reservation.confirm(paymentResult.paymentId, new Date());
 
-    await this.commandBus.execute(
-      new ConfirmSeatsCommand({
-        flightId: reservation.getFlightId(),
-        holdId: reservation.getHoldId(),
-      }),
-    );
+    try {
+      await this.commandBus.execute(
+        new ConfirmSeatsCommand({
+          flightId: reservation.getFlightId(),
+          holdId: reservation.getHoldId(),
+        }),
+      );
+    } catch (error) {
+      const refunded = await this.refundCapturedPayment(
+        paymentResult.paymentId,
+        totalPrice.amount,
+        totalPrice.currency,
+      );
+      throw new SeatConfirmationFailedException(
+        reservation.getId().value,
+        paymentResult.paymentId,
+        refunded,
+        error,
+      );
+    }
 
     await this.reservationRepository.save(reservation);
 
@@ -70,5 +85,23 @@ export class ConfirmReservationHandler implements ICommandHandler<
       status: ReservationStatus.CONFIRMED,
       paymentId: paymentResult.paymentId,
     };
+  }
+
+  private async refundCapturedPayment(
+    paymentId: string,
+    amount: number,
+    currency: string,
+  ): Promise<boolean> {
+    try {
+      const refundResult = await this.paymentGateway.refund({
+        paymentId,
+        amount,
+        currency,
+        reason: 'Seat confirmation failed after payment capture.',
+      });
+      return refundResult.success;
+    } catch {
+      return false;
+    }
   }
 }

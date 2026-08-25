@@ -48,4 +48,21 @@ describe('MockPaymentAdapter', () => {
 
     expect(result.success).toBe(true);
   });
+
+  it('returns a successful result with a deterministic-format refund id', async () => {
+    const adapter = new MockPaymentAdapter(0);
+
+    const result = await adapter.refund({
+      paymentId: 'pay_mock_1',
+      amount: 199.99,
+      currency: 'USD',
+      reason: 'Seat confirmation failed after payment capture.',
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw new Error('Expected a successful refund result.');
+    }
+    expect(result.refundId).toMatch(/^ref_mock_[0-9a-f-]{36}_pay_mock_1$/);
+  });
 });

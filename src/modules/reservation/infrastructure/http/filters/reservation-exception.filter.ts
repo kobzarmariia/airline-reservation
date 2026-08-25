@@ -16,6 +16,7 @@ import { InvalidPassengerInfoException } from '../../../domain/exceptions/invali
 import { InvalidMoneyException } from '../../../domain/exceptions/invalid-money.exception';
 import { ConcurrencyConflictException } from '../../../domain/exceptions/concurrency-conflict.exception';
 import { PaymentFailedException } from '../../../application/exceptions/payment-failed.exception';
+import { SeatConfirmationFailedException } from '../../../application/exceptions/seat-confirmation-failed.exception';
 import { SeatPriceNotFoundException } from '../../../application/exceptions/seat-price-not-found.exception';
 
 type ReservationDomainException =
@@ -30,6 +31,7 @@ type ReservationDomainException =
   | InvalidMoneyException
   | ConcurrencyConflictException
   | PaymentFailedException
+  | SeatConfirmationFailedException
   | SeatPriceNotFoundException;
 
 const STATUS_BY_EXCEPTION = new Map<Function, HttpStatus>([
@@ -45,6 +47,7 @@ const STATUS_BY_EXCEPTION = new Map<Function, HttpStatus>([
   [InvalidPassengerInfoException, HttpStatus.UNPROCESSABLE_ENTITY],
   [InvalidMoneyException, HttpStatus.UNPROCESSABLE_ENTITY],
   [PaymentFailedException, HttpStatus.PAYMENT_REQUIRED],
+  [SeatConfirmationFailedException, HttpStatus.CONFLICT],
 ]);
 
 @Catch(
@@ -59,6 +62,7 @@ const STATUS_BY_EXCEPTION = new Map<Function, HttpStatus>([
   InvalidMoneyException,
   ConcurrencyConflictException,
   PaymentFailedException,
+  SeatConfirmationFailedException,
   SeatPriceNotFoundException,
 )
 export class ReservationExceptionFilter implements ExceptionFilter {

@@ -6,8 +6,11 @@ import { ReservationRepositoryPort } from '../../../domain/repositories/reservat
 import {
   ProcessPaymentInput,
   ProcessPaymentResult,
+  RefundPaymentInput,
+  RefundPaymentResult,
 } from '../../ports/payment-gateway.port';
 import { PaymentFailedException } from '../../exceptions/payment-failed.exception';
+import { SeatConfirmationFailedException } from '../../exceptions/seat-confirmation-failed.exception';
 import { Reservation } from '../../../domain/models/reservation.aggregate';
 import { ReservationId } from '../../../domain/value-objects/reservation-id.vo';
 import { SeatAssignment } from '../../../domain/value-objects/seat-assignment.vo';
@@ -68,6 +71,9 @@ describe('ConfirmReservationHandler', () => {
     charge: jest.Mock<
       (input: ProcessPaymentInput) => Promise<ProcessPaymentResult>
     >;
+    refund: jest.Mock<
+      (input: RefundPaymentInput) => Promise<RefundPaymentResult>
+    >;
   };
   let commandBus: { execute: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
@@ -75,7 +81,7 @@ describe('ConfirmReservationHandler', () => {
 
   beforeEach(() => {
     reservationRepository = new InMemoryReservationRepository();
-    paymentGateway = { charge: jest.fn() };
+    paymentGateway = { charge: jest.fn(), refund: jest.fn() };
     commandBus = { execute: jest.fn(() => Promise.resolve(undefined)) };
     eventEmitter = { emit: jest.fn() };
     handler = new ConfirmReservationHandler(
@@ -166,5 +172,64 @@ describe('ConfirmReservationHandler', () => {
     expect(commandBus.execute).not.toHaveBeenCalled();
     expect(reservationRepository.save).not.toHaveBeenCalled();
     expect(eventEmitter.emit).not.toHaveBeenCalled();
+  });
+
+  it('refunds the captured payment and throws SeatConfirmationFailedException when seat confirmation fails after payment succeeds', async () => {
+    const reservation = buildPendingReservation();
+    reservationRepository.seed(reservation);
+    paymentGateway.charge.mockResolvedValueOnce({
+      success: true,
+      paymentId: 'pay_123',
+    });
+    commandBus.execute.mockImplementationOnce(() =>
+      Promise.reject(new Error('Hold expired.')),
+    );
+    paymentGateway.refund.mockResolvedValueOnce({
+      success: true,
+      refundId: 'ref_123',
+    });
+    const command = new ConfirmReservationCommand({
+      reservationId: reservation.getId().value,
+      paymentMethodToken: 'tok_visa',
+    });
+
+    const error = await handler.execute(command).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SeatConfirmationFailedException);
+    expect((error as SeatConfirmationFailedException).refunded).toBe(true);
+    expect(paymentGateway.refund).toHaveBeenCalledWith({
+      paymentId: 'pay_123',
+      amount: 15000,
+      currency: 'USD',
+      reason: 'Seat confirmation failed after payment capture.',
+    });
+    expect(reservationRepository.save).not.toHaveBeenCalled();
+    expect(eventEmitter.emit).not.toHaveBeenCalled();
+  });
+
+  it('marks the exception as unrefunded when the compensating refund also fails', async () => {
+    const reservation = buildPendingReservation();
+    reservationRepository.seed(reservation);
+    paymentGateway.charge.mockResolvedValueOnce({
+      success: true,
+      paymentId: 'pay_123',
+    });
+    commandBus.execute.mockImplementationOnce(() =>
+      Promise.reject(new Error('Hold expired.')),
+    );
+    paymentGateway.refund.mockResolvedValueOnce({
+      success: false,
+      failureReason: 'Refund gateway unavailable.',
+    });
+    const command = new ConfirmReservationCommand({
+      reservationId: reservation.getId().value,
+      paymentMethodToken: 'tok_visa',
+    });
+
+    const error = await handler.execute(command).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SeatConfirmationFailedException);
+    expect((error as SeatConfirmationFailedException).refunded).toBe(false);
+    expect(reservationRepository.save).not.toHaveBeenCalled();
   });
 });
