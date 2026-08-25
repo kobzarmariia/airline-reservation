@@ -8,6 +8,8 @@ import { PrismaFlightRepository } from './infrastructure/persistence/prisma-flig
 import { HoldSeatsHandler } from './application/commands/hold-seats/hold-seats.handler';
 import { ConfirmSeatsHandler } from './application/commands/confirm-seats/confirm-seats.handler';
 import { ReleaseSeatsHandler } from './application/commands/release-seats/release-seats.handler';
+import { GetFlightSeatMapHandler } from './application/queries/get-flight-seat-map/get-flight-seat-map.handler';
+import { SearchFlightsHandler } from './application/queries/search-flights/search-flights.handler';
 import { FlightController } from './infrastructure/http/flight.controller';
 import { FlightDomainExceptionFilter } from './infrastructure/http/filters/flight-domain-exception.filter';
 import { ExpireSeatHoldsWorker } from './infrastructure/jobs/expire-seat-holds.worker';
@@ -23,6 +25,8 @@ import { ExpireSeatHoldsWorker } from './infrastructure/jobs/expire-seat-holds.w
     HoldSeatsHandler,
     ConfirmSeatsHandler,
     ReleaseSeatsHandler,
+    GetFlightSeatMapHandler,
+    SearchFlightsHandler,
     ExpireSeatHoldsWorker,
     // Scoped to this module's own domain exceptions only (see @Catch(...) in
     // the filter), so binding it via APP_FILTER is safe even though the
@@ -37,6 +41,8 @@ import { ExpireSeatHoldsWorker } from './infrastructure/jobs/expire-seat-holds.w
     HoldSeatsHandler,
     ConfirmSeatsHandler,
     ReleaseSeatsHandler,
+    GetFlightSeatMapHandler,
+    SearchFlightsHandler,
   ],
 })
 export class FlightModule {}
