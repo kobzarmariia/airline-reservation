@@ -10,20 +10,22 @@ export class Seat {
   private constructor(
     public readonly seatNumber: SeatNumber,
     public readonly seatClass: SeatClass,
+    public readonly price: number = 0,
   ) {}
 
-  static create(seatNumber: SeatNumber, seatClass: SeatClass): Seat {
-    return new Seat(seatNumber, seatClass);
+  static create(seatNumber: SeatNumber, seatClass: SeatClass, price = 0): Seat {
+    return new Seat(seatNumber, seatClass, price);
   }
 
   static reconstitute(
     seatNumber: SeatNumber,
     seatClass: SeatClass,
+    price: number,
     status: SeatStatus,
     holdId: string | null,
     holdExpiresAt: Date | null,
   ): Seat {
-    const seat = new Seat(seatNumber, seatClass);
+    const seat = new Seat(seatNumber, seatClass, price);
     seat.status = status;
     seat.holdId = holdId;
     seat.holdExpiresAt = holdExpiresAt;

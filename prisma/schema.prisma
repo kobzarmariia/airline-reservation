@@ -10,6 +10,7 @@ datasource db {
 type SeatModel {
   seatNumber    String
   seatClass     String // "ECONOMY" | "BUSINESS" | "FIRST"
+  price         Float     @default(0)
   status        String // "AVAILABLE" | "HELD" | "OCCUPIED"
   holdId        String?
   holdExpiresAt DateTime?

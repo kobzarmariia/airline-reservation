@@ -22,6 +22,7 @@ export class FlightMapper {
       return Seat.reconstitute(
         SeatNumber.create(rawSeat.seatNumber),
         rawSeat.seatClass,
+        rawSeat.price,
         rawSeat.status,
         rawSeat.holdId ?? null,
         rawSeat.holdExpiresAt ?? null,
@@ -60,6 +61,7 @@ export class FlightMapper {
       seats: flight.getSeats().map((seat) => ({
         seatNumber: seat.seatNumber.value,
         seatClass: seat.seatClass,
+        price: seat.price,
         status: seat.getStatus(),
         holdId: seat.getHoldId(),
         holdExpiresAt: seat.getHoldExpiry(),

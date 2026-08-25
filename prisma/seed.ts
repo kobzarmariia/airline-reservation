@@ -46,6 +46,17 @@ const SEAT_LAYOUT_BY_CLASS: { seatClass: SeatClass; letters: string[] }[] = [
   { seatClass: 'ECONOMY', letters: ['A', 'B', 'C', 'D', 'E', 'F'] },
 ];
 
+const PRICE_RANGE_BY_CLASS: Record<SeatClass, [number, number]> = {
+  ECONOMY: [150, 450],
+  BUSINESS: [900, 2500],
+  FIRST: [3000, 6000],
+};
+
+function randomPrice(seatClass: SeatClass): number {
+  const [min, max] = PRICE_RANGE_BY_CLASS[seatClass];
+  return randomInt(min, max);
+}
+
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -105,6 +116,7 @@ function buildSeats(capacity: CapacityBySeatClass): Seat[] {
           Seat.reconstitute(
             SeatNumber.create(`${row}${letter}`),
             seatClass,
+            randomPrice(seatClass),
             status,
             holdId,
             holdExpiresAt,
