@@ -14,6 +14,7 @@ import { SeatNotAvailableException } from '../exceptions/seat-not-available.exce
 import { HoldNotFoundException } from '../exceptions/hold-not-found.exception';
 import { SeatHoldExpiredException } from '../exceptions/seat-hold-expired.exception';
 import { SeatHoldPolicy } from '../policies/seat-hold.policy';
+import { SeatStatus } from '../value-objects/seat-status.vo';
 
 export type FlightDomainEvent = SeatsHeld | SeatsReleased | SeatsConfirmed;
 
@@ -168,6 +169,21 @@ export class Flight {
     this.domainEvents.push(
       new SeatsConfirmed(this.id.value, holdId, confirmedSeatNumbers),
     );
+  }
+
+  public getExpiredHoldIds(now: Date): string[] {
+    const expiredHoldIds = new Set<string>();
+    for (const seat of this.seats.values()) {
+      if (seat.getStatus() !== SeatStatus.HELD) {
+        continue;
+      }
+      const holdId = seat.getHoldId();
+      const holdExpiresAt = seat.getHoldExpiry();
+      if (holdId !== null && holdExpiresAt !== null && now > holdExpiresAt) {
+        expiredHoldIds.add(holdId);
+      }
+    }
+    return Array.from(expiredHoldIds);
   }
 
   private getSeatsHeldBy(holdId: string): Seat[] {

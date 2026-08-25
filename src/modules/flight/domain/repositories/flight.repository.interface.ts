@@ -11,4 +11,5 @@ export interface FlightRepositoryPort {
     flightNumber: FlightNumber,
     departureDate: Date,
   ): Promise<Flight | null>;
+  findFlightsWithExpiredHolds(now: Date): Promise<Flight[]>;
 }

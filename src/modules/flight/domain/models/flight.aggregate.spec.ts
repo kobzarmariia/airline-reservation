@@ -183,6 +183,27 @@ describe('Flight', () => {
     );
   });
 
+  it('getExpiredHoldIds returns only holdIds whose hold has passed its expiry, deduplicated', () => {
+    const flight = buildFlight();
+    const requestedAt = now();
+    flight.holdSeats(
+      [SeatNumber.create('1A'), SeatNumber.create('1B')],
+      'hold-1',
+      requestedAt,
+    );
+    flight.holdSeats([SeatNumber.create('2A')], 'hold-2', requestedAt);
+    flight.pullDomainEvents();
+
+    const expiresAt = SeatHoldPolicy.resolveExpiresAt(requestedAt);
+    const afterExpiry = new Date(expiresAt.getTime() + 1);
+
+    expect(flight.getExpiredHoldIds(requestedAt)).toHaveLength(0);
+    expect(flight.getExpiredHoldIds(afterExpiry).sort()).toEqual([
+      'hold-1',
+      'hold-2',
+    ]);
+  });
+
   it('pullDomainEvents returns accumulated events and clears them', () => {
     const flight = buildFlight();
     flight.holdSeats([SeatNumber.create('1A')], 'hold-1', now());

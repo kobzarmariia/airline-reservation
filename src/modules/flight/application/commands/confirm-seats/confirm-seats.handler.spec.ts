@@ -34,6 +34,10 @@ class InMemoryFlightRepository implements FlightRepositoryPort {
   findByFlightNumberAndDate(): Promise<Flight | null> {
     return Promise.resolve(null);
   }
+
+  findFlightsWithExpiredHolds(): Promise<Flight[]> {
+    return Promise.resolve([]);
+  }
 }
 
 function buildFlight(): Flight {

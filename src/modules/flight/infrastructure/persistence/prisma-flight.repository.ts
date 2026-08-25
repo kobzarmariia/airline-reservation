@@ -4,6 +4,7 @@ import { FlightRepositoryPort } from '../../domain/repositories/flight.repositor
 import { Flight } from '../../domain/models/flight.aggregate';
 import { FlightId } from '../../domain/value-objects/flight-id.vo';
 import { FlightNumber } from '../../domain/value-objects/flight-number.vo';
+import { SeatStatus } from '../../domain/value-objects/seat-status.vo';
 import { FlightMapper } from './flight.mapper';
 
 @Injectable()
@@ -44,5 +45,20 @@ export class PrismaFlightRepository implements FlightRepositoryPort {
     });
 
     return raw ? FlightMapper.toDomain(raw) : null;
+  }
+
+  async findFlightsWithExpiredHolds(now: Date): Promise<Flight[]> {
+    const rawFlights = await this.prisma.flightModel.findMany({
+      where: {
+        seats: {
+          some: {
+            status: SeatStatus.HELD,
+            holdExpiresAt: { lt: now },
+          },
+        },
+      },
+    });
+
+    return rawFlights.map((raw) => FlightMapper.toDomain(raw));
   }
 }
