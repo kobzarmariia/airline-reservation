@@ -1,4 +1,4 @@
-export class SeatsOccupied {
+export class SeatsConfirmed {
   constructor(
     public readonly flightId: string,
     public readonly holdId: string,

@@ -10,10 +10,12 @@ import { SeatNumber } from '../value-objects/seat-number.vo';
 import { SeatStatus } from '../value-objects/seat-status.vo';
 import { SeatsHeld } from '../events/seats-held.event';
 import { SeatsReleased } from '../events/seats-released.event';
-import { SeatsOccupied } from '../events/seats-occupied.event';
+import { SeatsConfirmed } from '../events/seats-confirmed.event';
 import { FlightAlreadyDepartedException } from '../exceptions/flight-already-departed.exception';
 import { SeatNotFoundException } from '../exceptions/seat-not-found.exception';
 import { SeatNotAvailableException } from '../exceptions/seat-not-available.exception';
+import { HoldNotFoundException } from '../exceptions/hold-not-found.exception';
+import { SeatHoldExpiredException } from '../exceptions/seat-hold-expired.exception';
 import { SeatHoldPolicy } from '../policies/seat-hold.policy';
 
 function buildFlight(
@@ -91,7 +93,7 @@ describe('Flight', () => {
     ).toThrow(FlightAlreadyDepartedException);
   });
 
-  it('releases seats held by the same holdId, freeing them, and emits SeatsReleased', () => {
+  it('releases all seats held under a holdId, freeing them, and emits SeatsReleased', () => {
     const flight = buildFlight();
     flight.holdSeats(
       [SeatNumber.create('1A'), SeatNumber.create('1B')],
@@ -100,43 +102,43 @@ describe('Flight', () => {
     );
     flight.pullDomainEvents();
 
-    flight.releaseSeats([SeatNumber.create('1A')], 'hold-1');
+    flight.releaseSeats('hold-1');
 
-    expect(flight.getAvailableSeatCount()).toBe(2);
+    expect(flight.getAvailableSeatCount()).toBe(3);
     const events = flight.pullDomainEvents();
     expect(events).toHaveLength(1);
     expect(events[0]).toBeInstanceOf(SeatsReleased);
     expect(events[0]).toMatchObject({
       flightId: 'flight-1',
       holdId: 'hold-1',
-      seatNumbers: ['1A'],
+      seatNumbers: expect.arrayContaining(['1A', '1B']),
     });
   });
 
-  it('ignores release for seats held by a different holdId and emits no event', () => {
+  it('silently succeeds and emits no event when releasing an unknown or already-released holdId', () => {
     const flight = buildFlight();
     flight.holdSeats([SeatNumber.create('1A')], 'hold-1', now());
     flight.pullDomainEvents();
 
-    flight.releaseSeats([SeatNumber.create('1A')], 'hold-2');
+    expect(() => flight.releaseSeats('hold-2')).not.toThrow();
 
     expect(flight.getAvailableSeatCount()).toBe(2);
     expect(flight.pullDomainEvents()).toHaveLength(0);
   });
 
-  it('occupies held seats, transitioning them from HELD to OCCUPIED, and emits SeatsOccupied', () => {
+  it('confirms held seats, transitioning them from HELD to OCCUPIED, and emits SeatsConfirmed', () => {
     const flight = buildFlight();
     flight.holdSeats([SeatNumber.create('1A')], 'hold-1', now());
     flight.pullDomainEvents();
 
-    flight.occupySeats([SeatNumber.create('1A')], 'hold-1');
+    flight.confirmSeats('hold-1', now());
 
     const seat = flight.getSeats().find((s) => s.seatNumber.value === '1A')!;
     expect(seat.getStatus()).toBe(SeatStatus.OCCUPIED);
 
     const events = flight.pullDomainEvents();
     expect(events).toHaveLength(1);
-    expect(events[0]).toBeInstanceOf(SeatsOccupied);
+    expect(events[0]).toBeInstanceOf(SeatsConfirmed);
     expect(events[0]).toMatchObject({
       flightId: 'flight-1',
       holdId: 'hold-1',
@@ -144,13 +146,41 @@ describe('Flight', () => {
     });
   });
 
-  it('throws SeatNotAvailableException when occupying seats that were never held', () => {
+  it('throws HoldNotFoundException when confirming a holdId that holds no seats', () => {
     const flight = buildFlight();
 
-    expect(() =>
-      flight.occupySeats([SeatNumber.create('1A')], 'hold-1'),
-    ).toThrow(SeatNotAvailableException);
+    expect(() => flight.confirmSeats('hold-1', now())).toThrow(
+      HoldNotFoundException,
+    );
     expect(flight.pullDomainEvents()).toHaveLength(0);
+  });
+
+  it('throws FlightAlreadyDepartedException when confirming seats on a departed flight', () => {
+    const flight = buildFlight();
+    flight.holdSeats([SeatNumber.create('1A')], 'hold-1', now());
+    flight.pullDomainEvents();
+
+    const afterDeparture = new Date(
+      flight.getSchedule().departureTime.getTime() + 60 * 1000,
+    );
+
+    expect(() => flight.confirmSeats('hold-1', afterDeparture)).toThrow(
+      FlightAlreadyDepartedException,
+    );
+  });
+
+  it('throws SeatHoldExpiredException when confirming a hold past its expiry', () => {
+    const flight = buildFlight();
+    const requestedAt = now();
+    flight.holdSeats([SeatNumber.create('1A')], 'hold-1', requestedAt);
+    flight.pullDomainEvents();
+
+    const expiresAt = SeatHoldPolicy.resolveExpiresAt(requestedAt);
+    const afterExpiry = new Date(expiresAt.getTime() + 1);
+
+    expect(() => flight.confirmSeats('hold-1', afterExpiry)).toThrow(
+      SeatHoldExpiredException,
+    );
   });
 
   it('pullDomainEvents returns accumulated events and clears them', () => {

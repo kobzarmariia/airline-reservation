@@ -7,13 +7,15 @@ import { SeatNumber } from '../value-objects/seat-number.vo';
 import { Seat } from './seat.entity';
 import { SeatsHeld } from '../events/seats-held.event';
 import { SeatsReleased } from '../events/seats-released.event';
-import { SeatsOccupied } from '../events/seats-occupied.event';
+import { SeatsConfirmed } from '../events/seats-confirmed.event';
 import { FlightAlreadyDepartedException } from '../exceptions/flight-already-departed.exception';
 import { SeatNotFoundException } from '../exceptions/seat-not-found.exception';
 import { SeatNotAvailableException } from '../exceptions/seat-not-available.exception';
+import { HoldNotFoundException } from '../exceptions/hold-not-found.exception';
+import { SeatHoldExpiredException } from '../exceptions/seat-hold-expired.exception';
 import { SeatHoldPolicy } from '../policies/seat-hold.policy';
 
-export type FlightDomainEvent = SeatsHeld | SeatsReleased | SeatsOccupied;
+export type FlightDomainEvent = SeatsHeld | SeatsReleased | SeatsConfirmed;
 
 export class Flight {
   private domainEvents: FlightDomainEvent[] = [];
@@ -120,39 +122,57 @@ export class Flight {
     return expiresAt;
   }
 
-  public releaseSeats(seatNumbers: SeatNumber[], holdId: string): void {
+  // Idempotent by design: releasing a holdId that owns no seats (already
+  // released, already confirmed, or never existed) is a silent no-op rather
+  // than an error, so callers (e.g. a DELETE endpoint) can retry safely.
+  public releaseSeats(holdId: string): void {
+    const heldSeats = this.getSeatsHeldBy(holdId);
+    if (heldSeats.length === 0) {
+      return;
+    }
+
     const releasedSeatNumbers: string[] = [];
-
-    for (const seatNumber of seatNumbers) {
-      const seat = this.seats.get(seatNumber.value);
-      if (seat && seat.isHeldBy(holdId)) {
-        seat.release();
-        releasedSeatNumbers.push(seatNumber.value);
-      }
-    }
-
-    if (releasedSeatNumbers.length > 0) {
-      this.domainEvents.push(
-        new SeatsReleased(this.id.value, holdId, releasedSeatNumbers),
-      );
-    }
-  }
-
-  public occupySeats(seatNumbers: SeatNumber[], holdId: string): void {
-    for (const seatNumber of seatNumbers) {
-      const seat = this.seats.get(seatNumber.value);
-      if (!seat || !seat.isHeldBy(holdId)) {
-        throw new SeatNotAvailableException(seatNumber.value);
-      }
-      seat.occupy();
+    for (const seat of heldSeats) {
+      seat.release();
+      releasedSeatNumbers.push(seat.seatNumber.value);
     }
 
     this.domainEvents.push(
-      new SeatsOccupied(
-        this.id.value,
-        holdId,
-        seatNumbers.map((seatNumber) => seatNumber.value),
-      ),
+      new SeatsReleased(this.id.value, holdId, releasedSeatNumbers),
+    );
+  }
+
+  public confirmSeats(holdId: string, now: Date): void {
+    if (this.schedule.hasDeparted(now)) {
+      throw new FlightAlreadyDepartedException();
+    }
+
+    const heldSeats = this.getSeatsHeldBy(holdId);
+    if (heldSeats.length === 0) {
+      throw new HoldNotFoundException(holdId);
+    }
+
+    for (const seat of heldSeats) {
+      const holdExpiresAt = seat.getHoldExpiry();
+      if (holdExpiresAt !== null && now > holdExpiresAt) {
+        throw new SeatHoldExpiredException(holdId);
+      }
+    }
+
+    const confirmedSeatNumbers: string[] = [];
+    for (const seat of heldSeats) {
+      seat.occupy();
+      confirmedSeatNumbers.push(seat.seatNumber.value);
+    }
+
+    this.domainEvents.push(
+      new SeatsConfirmed(this.id.value, holdId, confirmedSeatNumbers),
+    );
+  }
+
+  private getSeatsHeldBy(holdId: string): Seat[] {
+    return Array.from(this.seats.values()).filter((seat) =>
+      seat.isHeldBy(holdId),
     );
   }
 
