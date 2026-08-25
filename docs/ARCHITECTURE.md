@@ -196,7 +196,7 @@ sequenceDiagram
                 Note over ConfirmH,Payment: ⚠️ Refund also failed — payment stays captured<br/>and reservation stays PENDING. Manual<br/>reconciliation required.
             end
             ConfirmH-->>ResCtrl: throws SeatConfirmationFailedException { refunded }
-            ResCtrl-->>Client: 409 (reservation stays PENDING; refund attempted)
+            ResCtrl-->>Client: 409 (reservation stays PENDING, refund attempted)
         else seats confirmed
             FlightAgg-->>ConfirmSeatsH: seats → OCCUPIED, SeatsConfirmed event
             ConfirmSeatsH-->>ConfirmH: ConfirmSeatsResult
