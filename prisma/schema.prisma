@@ -16,6 +16,52 @@ type SeatModel {
   holdExpiresAt DateTime?
 }
 
+type PassengerModel {
+  firstName      String
+  lastName       String
+  email          String
+  passportNumber String?
+}
+
+type MoneyModel {
+  amount   Int
+  currency String
+}
+
+type SeatAssignmentModel {
+  seatNumber String
+  passenger  PassengerModel
+  price      MoneyModel
+}
+
+model ReservationModel {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  domainId String @unique
+
+  flightId String
+  holdId   String
+  status   String // "PENDING" | "CONFIRMED" | "CANCELLED" | "EXPIRED"
+
+  seatAssignments SeatAssignmentModel[]
+  totalPrice      MoneyModel
+
+  holdExpiresAt      DateTime
+  paymentId          String?
+  cancellationReason String?
+
+  // Optimistic concurrency control: bumped on every successful write so
+  // concurrent writers that read the same version can detect a lost update.
+  version Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([flightId])
+  @@index([holdId])
+  @@index([status, holdExpiresAt])
+  @@map("reservations")
+}
+
 model FlightModel {
   id           String @id @default(auto()) @map("_id") @db.ObjectId
   domainId     String @unique
