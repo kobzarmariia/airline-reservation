@@ -40,6 +40,7 @@ export class FlightMapper {
         FIRST: raw.firstCapacity,
       }),
       seats,
+      raw.version,
     );
   }
 
@@ -58,6 +59,7 @@ export class FlightMapper {
       economyCapacity: capacity.forSeatClass('ECONOMY'),
       businessCapacity: capacity.forSeatClass('BUSINESS'),
       firstCapacity: capacity.forSeatClass('FIRST'),
+      version: flight.getVersion(),
       seats: flight.getSeats().map((seat) => ({
         seatNumber: seat.seatNumber.value,
         seatClass: seat.seatClass,

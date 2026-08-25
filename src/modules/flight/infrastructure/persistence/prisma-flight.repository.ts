@@ -5,6 +5,7 @@ import { Flight } from '../../domain/models/flight.aggregate';
 import { FlightId } from '../../domain/value-objects/flight-id.vo';
 import { FlightNumber } from '../../domain/value-objects/flight-number.vo';
 import { SeatStatus } from '../../domain/value-objects/seat-status.vo';
+import { ConcurrencyConflictException } from '../../domain/exceptions/concurrency-conflict.exception';
 import { FlightMapper } from './flight.mapper';
 
 @Injectable()
@@ -13,12 +14,35 @@ export class PrismaFlightRepository implements FlightRepositoryPort {
 
   async save(flight: Flight): Promise<void> {
     const data = FlightMapper.toPersistence(flight);
+    const currentVersion = flight.getVersion();
 
-    await this.prisma.flightModel.upsert({
+    const existing = await this.prisma.flightModel.findUnique({
       where: { domainId: flight.getId().value },
-      create: data,
-      update: data,
+      select: { domainId: true },
     });
+
+    if (!existing) {
+      await this.prisma.flightModel.create({
+        data: { ...data, version: currentVersion },
+      });
+      return;
+    }
+
+    // Optimistic concurrency control: only apply the write if the version
+    // in the database still matches the one this aggregate was loaded with.
+    // A concurrent writer that already bumped the version makes this match
+    // zero documents, signaling a lost-update race rather than silently
+    // overwriting the other writer's changes.
+    const result = await this.prisma.flightModel.updateMany({
+      where: { domainId: flight.getId().value, version: currentVersion },
+      data: { ...data, version: currentVersion + 1 },
+    });
+
+    if (result.count === 0) {
+      throw new ConcurrencyConflictException(flight.getId().value);
+    }
+
+    flight.incrementVersion();
   }
 
   async findById(id: FlightId): Promise<Flight | null> {

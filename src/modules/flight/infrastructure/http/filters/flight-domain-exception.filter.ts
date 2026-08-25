@@ -12,6 +12,7 @@ import { SeatNotAvailableException } from '../../../domain/exceptions/seat-not-a
 import { InvalidSeatNumberException } from '../../../domain/exceptions/invalid-seat-number.exception';
 import { HoldNotFoundException } from '../../../domain/exceptions/hold-not-found.exception';
 import { SeatHoldExpiredException } from '../../../domain/exceptions/seat-hold-expired.exception';
+import { ConcurrencyConflictException } from '../../../domain/exceptions/concurrency-conflict.exception';
 
 type FlightDomainException =
   | FlightNotFoundException
@@ -20,7 +21,8 @@ type FlightDomainException =
   | SeatNotAvailableException
   | InvalidSeatNumberException
   | HoldNotFoundException
-  | SeatHoldExpiredException;
+  | SeatHoldExpiredException
+  | ConcurrencyConflictException;
 
 // Note: this codebase has no separate "SeatAlreadyHeldException" — a seat
 // that is already held is simply not AVAILABLE, so SeatNotAvailableException
@@ -33,6 +35,7 @@ const STATUS_BY_EXCEPTION = new Map<Function, HttpStatus>([
   [InvalidSeatNumberException, HttpStatus.UNPROCESSABLE_ENTITY],
   [HoldNotFoundException, HttpStatus.NOT_FOUND],
   [SeatHoldExpiredException, HttpStatus.CONFLICT],
+  [ConcurrencyConflictException, HttpStatus.CONFLICT],
 ]);
 
 @Catch(
@@ -43,6 +46,7 @@ const STATUS_BY_EXCEPTION = new Map<Function, HttpStatus>([
   InvalidSeatNumberException,
   HoldNotFoundException,
   SeatHoldExpiredException,
+  ConcurrencyConflictException,
 )
 export class FlightDomainExceptionFilter implements ExceptionFilter {
   catch(exception: FlightDomainException, host: ArgumentsHost): void {

@@ -35,6 +35,10 @@ model FlightModel {
   // Embedded seats array
   seats SeatModel[]
 
+  // Optimistic concurrency control: bumped on every successful write so
+  // concurrent writers that read the same version can detect a lost update.
+  version Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

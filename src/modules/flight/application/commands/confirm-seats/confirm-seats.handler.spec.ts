@@ -15,16 +15,30 @@ import { SeatStatus } from '../../../domain/value-objects/seat-status.vo';
 import { SeatsConfirmed } from '../../../domain/events/seats-confirmed.event';
 import { FlightNotFoundException } from '../../../domain/exceptions/flight-not-found.exception';
 import { HoldNotFoundException } from '../../../domain/exceptions/hold-not-found.exception';
+import { ConcurrencyConflictException } from '../../../domain/exceptions/concurrency-conflict.exception';
 
 class InMemoryFlightRepository implements FlightRepositoryPort {
   private readonly flightsById = new Map<string, Flight>();
+  private readonly persistedVersionsById = new Map<string, number>();
   readonly save = jest.fn((flight: Flight): Promise<void> => {
+    const persistedVersion = this.persistedVersionsById.get(
+      flight.getId().value,
+    );
+    if (
+      persistedVersion !== undefined &&
+      persistedVersion !== flight.getVersion()
+    ) {
+      throw new ConcurrencyConflictException(flight.getId().value);
+    }
+    flight.incrementVersion();
+    this.persistedVersionsById.set(flight.getId().value, flight.getVersion());
     this.flightsById.set(flight.getId().value, flight);
     return Promise.resolve();
   });
 
   seed(flight: Flight): void {
     this.flightsById.set(flight.getId().value, flight);
+    this.persistedVersionsById.set(flight.getId().value, flight.getVersion());
   }
 
   findById(id: FlightId): Promise<Flight | null> {

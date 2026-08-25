@@ -28,6 +28,7 @@ export class Flight {
     private readonly schedule: Schedule,
     private readonly capacity: Capacity,
     private seats: Map<string, Seat>, // Keyed by SeatNumber value (e.g., '12A')
+    private version: number,
   ) {}
 
   static create(
@@ -42,7 +43,7 @@ export class Flight {
     for (const seat of seats) {
       seatMap.set(seat.seatNumber.value, seat);
     }
-    return new Flight(id, flightNumber, route, schedule, capacity, seatMap);
+    return new Flight(id, flightNumber, route, schedule, capacity, seatMap, 0);
   }
 
   // Rebuilds a Flight from persisted state without emitting domain creation events.
@@ -53,12 +54,21 @@ export class Flight {
     schedule: Schedule,
     capacity: Capacity,
     seats: Seat[],
+    version = 0,
   ): Flight {
     const seatMap = new Map<string, Seat>();
     for (const seat of seats) {
       seatMap.set(seat.seatNumber.value, seat);
     }
-    return new Flight(id, flightNumber, route, schedule, capacity, seatMap);
+    return new Flight(
+      id,
+      flightNumber,
+      route,
+      schedule,
+      capacity,
+      seatMap,
+      version,
+    );
   }
 
   getId(): FlightId {
@@ -83,6 +93,16 @@ export class Flight {
 
   getSeats(): Seat[] {
     return Array.from(this.seats.values());
+  }
+
+  getVersion(): number {
+    return this.version;
+  }
+
+  // Called by the repository once persistence has confirmed the write, so
+  // the in-memory aggregate reflects the version now stored in the database.
+  incrementVersion(): void {
+    this.version += 1;
   }
 
   public holdSeats(seatNumbers: SeatNumber[], holdId: string, now: Date): Date {

@@ -11,10 +11,23 @@ import { Route } from '../../domain/value-objects/route.vo';
 import { Schedule } from '../../domain/value-objects/schedule.vo';
 import { Capacity } from '../../domain/value-objects/capacity.vo';
 import { SeatNumber } from '../../domain/value-objects/seat-number.vo';
+import { ConcurrencyConflictException } from '../../domain/exceptions/concurrency-conflict.exception';
 
 class InMemoryFlightRepository implements FlightRepositoryPort {
   private readonly flightsById = new Map<string, Flight>();
+  private readonly persistedVersionsById = new Map<string, number>();
   readonly save = jest.fn((flight: Flight): Promise<void> => {
+    const persistedVersion = this.persistedVersionsById.get(
+      flight.getId().value,
+    );
+    if (
+      persistedVersion !== undefined &&
+      persistedVersion !== flight.getVersion()
+    ) {
+      throw new ConcurrencyConflictException(flight.getId().value);
+    }
+    flight.incrementVersion();
+    this.persistedVersionsById.set(flight.getId().value, flight.getVersion());
     this.flightsById.set(flight.getId().value, flight);
     return Promise.resolve();
   });
@@ -30,6 +43,7 @@ class InMemoryFlightRepository implements FlightRepositoryPort {
 
   seed(flight: Flight): void {
     this.flightsById.set(flight.getId().value, flight);
+    this.persistedVersionsById.set(flight.getId().value, flight.getVersion());
   }
 
   findById(id: FlightId): Promise<Flight | null> {
