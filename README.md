@@ -55,9 +55,12 @@ bounded-context boundaries.
 The backend is a **modular monolith** organized around two bounded
 contexts — **Flight** (schedules, seat inventory, pricing, temporary seat
 holds) and **Reservation** (bookings, price snapshots, payments,
-expiration workers) — that communicate in-process via `CommandBus` /
-`QueryBus` and domain events, never through direct repository access
-across the boundary.
+expiration workers). The Reservation context reaches Flight only through a
+single Anti-Corruption Layer (`FlightInventoryPort`), whose adapter is the
+one place that dispatches over `CommandBus` / `QueryBus`; the multi-step
+confirm-and-pay flow is run by an explicit orchestration saga
+(`ConfirmReservationSaga`) with a compensation stack. Contexts never reach
+across the boundary through direct repository access.
 
 For a full breakdown — system diagrams, the end-to-end booking sequence,
 state machines, and the architectural decisions behind them — see

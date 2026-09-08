@@ -7,6 +7,9 @@ import { RESERVATION_REPOSITORY_PORT } from './domain/repositories/reservation.r
 import { PrismaReservationRepository } from './infrastructure/repositories/prisma-reservation.repository';
 import { PAYMENT_GATEWAY_PORT } from './application/ports/payment-gateway.port';
 import { MockPaymentAdapter } from './infrastructure/adapters/mock-payment.adapter';
+import { FLIGHT_INVENTORY_PORT } from './application/ports/flight-inventory.port';
+import { CqrsFlightInventoryAdapter } from './infrastructure/acl/cqrs-flight-inventory.adapter';
+import { ConfirmReservationSaga } from './application/sagas/confirm-reservation.saga';
 import { CreateReservationHandler } from './application/commands/create-reservation/create-reservation.handler';
 import { ConfirmReservationHandler } from './application/commands/confirm-reservation/confirm-reservation.handler';
 import { CancelReservationHandler } from './application/commands/cancel-reservation/cancel-reservation.handler';
@@ -27,6 +30,12 @@ import { ReservationExceptionFilter } from './infrastructure/http/filters/reserv
       provide: PAYMENT_GATEWAY_PORT,
       useClass: MockPaymentAdapter,
     },
+    {
+      // Anti-Corruption Layer: the sole seam between Reservation and Flight.
+      provide: FLIGHT_INVENTORY_PORT,
+      useClass: CqrsFlightInventoryAdapter,
+    },
+    ConfirmReservationSaga,
     CreateReservationHandler,
     ConfirmReservationHandler,
     CancelReservationHandler,

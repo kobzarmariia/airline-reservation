@@ -10,7 +10,7 @@ import { SeatAssignment } from '../../../domain/value-objects/seat-assignment.vo
 import { PassengerInfo } from '../../../domain/value-objects/passenger-info.vo';
 import { Money } from '../../../domain/value-objects/money.vo';
 import { ConcurrencyConflictException } from '../../../domain/exceptions/concurrency-conflict.exception';
-import { ReleaseSeatsCommand } from '../../../../flight/application/commands/release-seats/release-seats.command';
+import { FlightInventoryPort } from '../../ports/flight-inventory.port';
 
 class InMemoryReservationRepository implements ReservationRepositoryPort {
   private readonly reservationsById = new Map<string, Reservation>();
@@ -69,7 +69,11 @@ function buildPendingReservation(
 
 describe('ExpirePendingReservationsHandler', () => {
   let reservationRepository: InMemoryReservationRepository;
-  let commandBus: { execute: jest.Mock };
+  let flightInventory: {
+    getSeatPrices: jest.Mock;
+    confirmSeats: jest.Mock;
+    releaseSeats: jest.Mock;
+  };
   let eventEmitter: { emit: jest.Mock };
   let handler: ExpirePendingReservationsHandler;
 
@@ -78,11 +82,15 @@ describe('ExpirePendingReservationsHandler', () => {
 
   beforeEach(() => {
     reservationRepository = new InMemoryReservationRepository();
-    commandBus = { execute: jest.fn(() => Promise.resolve(undefined)) };
+    flightInventory = {
+      getSeatPrices: jest.fn(),
+      confirmSeats: jest.fn(() => Promise.resolve()),
+      releaseSeats: jest.fn(() => Promise.resolve()),
+    };
     eventEmitter = { emit: jest.fn() };
     handler = new ExpirePendingReservationsHandler(
       reservationRepository,
-      commandBus as never,
+      flightInventory as unknown as FlightInventoryPort,
       eventEmitter as unknown as EventEmitter2,
     );
   });
@@ -93,7 +101,7 @@ describe('ExpirePendingReservationsHandler', () => {
     );
 
     expect(reservationRepository.findExpiredPending).toHaveBeenCalledWith(now);
-    expect(commandBus.execute).not.toHaveBeenCalled();
+    expect(flightInventory.releaseSeats).not.toHaveBeenCalled();
     expect(result).toBe(0);
   });
 
@@ -112,9 +120,10 @@ describe('ExpirePendingReservationsHandler', () => {
     const savedReservation = reservationRepository.save.mock.calls[0][0];
     expect(savedReservation.getStatus()).toBe('EXPIRED');
 
-    expect(commandBus.execute).toHaveBeenCalledTimes(1);
-    expect(commandBus.execute).toHaveBeenCalledWith(
-      new ReleaseSeatsCommand({ flightId: 'flight-1', holdId: 'hold-1' }),
+    expect(flightInventory.releaseSeats).toHaveBeenCalledTimes(1);
+    expect(flightInventory.releaseSeats).toHaveBeenCalledWith(
+      'flight-1',
+      'hold-1',
     );
 
     expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
@@ -133,11 +142,11 @@ describe('ExpirePendingReservationsHandler', () => {
     );
 
     expect(result).toBe(2);
-    expect(commandBus.execute).toHaveBeenCalledTimes(2);
-    const dispatchedHoldIds = commandBus.execute.mock.calls
-      .map(([command]) => (command as ReleaseSeatsCommand).holdId)
+    expect(flightInventory.releaseSeats).toHaveBeenCalledTimes(2);
+    const releasedHoldIds = flightInventory.releaseSeats.mock.calls
+      .map(([, holdId]) => holdId as string)
       .sort();
-    expect(dispatchedHoldIds).toEqual(['hold-a', 'hold-b']);
+    expect(releasedHoldIds).toEqual(['hold-a', 'hold-b']);
   });
 
   it('logs the failure, skips releasing that hold, and continues with the rest of the batch when save throws a concurrency conflict', async () => {
@@ -166,9 +175,10 @@ describe('ExpirePendingReservationsHandler', () => {
     );
 
     expect(result).toBe(1);
-    expect(commandBus.execute).toHaveBeenCalledTimes(1);
-    expect(commandBus.execute).toHaveBeenCalledWith(
-      new ReleaseSeatsCommand({ flightId: 'flight-b', holdId: 'hold-b' }),
+    expect(flightInventory.releaseSeats).toHaveBeenCalledTimes(1);
+    expect(flightInventory.releaseSeats).toHaveBeenCalledWith(
+      'flight-b',
+      'hold-b',
     );
     expect(errorLogSpy).toHaveBeenCalledTimes(1);
     expect(errorLogSpy.mock.calls[0][0]).toContain(reservationA.getId().value);

@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { CommandBus, CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RESERVATION_REPOSITORY_PORT } from '../../../domain/repositories/reservation.repository.interface';
 import type { ReservationRepositoryPort } from '../../../domain/repositories/reservation.repository.interface';
 import { Reservation } from '../../../domain/models/reservation.aggregate';
-import { ReleaseSeatsCommand } from '../../../../flight/application/commands/release-seats/release-seats.command';
+import { FLIGHT_INVENTORY_PORT } from '../../ports/flight-inventory.port';
+import type { FlightInventoryPort } from '../../ports/flight-inventory.port';
 import { ExpirePendingReservationsCommand } from './expire-pending-reservations.command';
 
 @CommandHandler(ExpirePendingReservationsCommand)
@@ -18,7 +19,8 @@ export class ExpirePendingReservationsHandler implements ICommandHandler<
   constructor(
     @Inject(RESERVATION_REPOSITORY_PORT)
     private readonly reservationRepository: ReservationRepositoryPort,
-    private readonly commandBus: CommandBus,
+    @Inject(FLIGHT_INVENTORY_PORT)
+    private readonly flightInventory: FlightInventoryPort,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -54,11 +56,9 @@ export class ExpirePendingReservationsHandler implements ICommandHandler<
 
     await this.reservationRepository.save(reservation);
 
-    await this.commandBus.execute(
-      new ReleaseSeatsCommand({
-        flightId: reservation.getFlightId(),
-        holdId: reservation.getHoldId(),
-      }),
+    await this.flightInventory.releaseSeats(
+      reservation.getFlightId(),
+      reservation.getHoldId(),
     );
 
     for (const event of reservation.pullDomainEvents()) {

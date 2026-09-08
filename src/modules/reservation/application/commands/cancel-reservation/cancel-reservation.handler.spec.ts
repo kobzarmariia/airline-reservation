@@ -10,7 +10,7 @@ import { PassengerInfo } from '../../../domain/value-objects/passenger-info.vo';
 import { Money } from '../../../domain/value-objects/money.vo';
 import { ReservationNotFoundException } from '../../../domain/exceptions/reservation-not-found.exception';
 import { ReservationAlreadyConfirmedException } from '../../../domain/exceptions/reservation-already-confirmed.exception';
-import { ReleaseSeatsCommand } from '../../../../flight/application/commands/release-seats/release-seats.command';
+import { FlightInventoryPort } from '../../ports/flight-inventory.port';
 
 class InMemoryReservationRepository implements ReservationRepositoryPort {
   private readonly reservationsById = new Map<string, Reservation>();
@@ -60,17 +60,25 @@ function buildPendingReservation(): Reservation {
 
 describe('CancelReservationHandler', () => {
   let reservationRepository: InMemoryReservationRepository;
-  let commandBus: { execute: jest.Mock };
+  let flightInventory: {
+    getSeatPrices: jest.Mock;
+    confirmSeats: jest.Mock;
+    releaseSeats: jest.Mock;
+  };
   let eventEmitter: { emit: jest.Mock };
   let handler: CancelReservationHandler;
 
   beforeEach(() => {
     reservationRepository = new InMemoryReservationRepository();
-    commandBus = { execute: jest.fn(() => Promise.resolve(undefined)) };
+    flightInventory = {
+      getSeatPrices: jest.fn(),
+      confirmSeats: jest.fn(() => Promise.resolve()),
+      releaseSeats: jest.fn(() => Promise.resolve()),
+    };
     eventEmitter = { emit: jest.fn() };
     handler = new CancelReservationHandler(
       reservationRepository,
-      commandBus as never,
+      flightInventory as unknown as FlightInventoryPort,
       eventEmitter as unknown as EventEmitter2,
     );
   });
@@ -90,14 +98,11 @@ describe('CancelReservationHandler', () => {
       status: 'CANCELLED',
     });
 
-    expect(commandBus.execute).toHaveBeenCalledTimes(1);
-    const releaseCommand = commandBus.execute.mock
-      .calls[0][0] as ReleaseSeatsCommand;
-    expect(releaseCommand).toBeInstanceOf(ReleaseSeatsCommand);
-    expect(releaseCommand).toMatchObject({
-      flightId: 'flight-1',
-      holdId: 'hold-1',
-    });
+    expect(flightInventory.releaseSeats).toHaveBeenCalledTimes(1);
+    expect(flightInventory.releaseSeats).toHaveBeenCalledWith(
+      'flight-1',
+      'hold-1',
+    );
 
     expect(reservationRepository.save).toHaveBeenCalledTimes(1);
     const savedReservation = reservationRepository.save.mock.calls[0][0];
@@ -120,7 +125,7 @@ describe('CancelReservationHandler', () => {
     await expect(handler.execute(command)).rejects.toThrow(
       ReservationNotFoundException,
     );
-    expect(commandBus.execute).not.toHaveBeenCalled();
+    expect(flightInventory.releaseSeats).not.toHaveBeenCalled();
     expect(reservationRepository.save).not.toHaveBeenCalled();
   });
 
@@ -137,7 +142,7 @@ describe('CancelReservationHandler', () => {
     await expect(handler.execute(command)).rejects.toThrow(
       ReservationAlreadyConfirmedException,
     );
-    expect(commandBus.execute).not.toHaveBeenCalled();
+    expect(flightInventory.releaseSeats).not.toHaveBeenCalled();
     expect(reservationRepository.save).not.toHaveBeenCalled();
     expect(eventEmitter.emit).not.toHaveBeenCalled();
   });

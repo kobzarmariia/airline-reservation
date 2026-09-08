@@ -3,21 +3,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfirmReservationHandler } from './confirm-reservation.handler';
 import { ConfirmReservationCommand } from './confirm-reservation.command';
 import { ReservationRepositoryPort } from '../../../domain/repositories/reservation.repository.interface';
-import {
-  ProcessPaymentInput,
-  ProcessPaymentResult,
-  RefundPaymentInput,
-  RefundPaymentResult,
-} from '../../ports/payment-gateway.port';
 import { PaymentFailedException } from '../../exceptions/payment-failed.exception';
 import { SeatConfirmationFailedException } from '../../exceptions/seat-confirmation-failed.exception';
+import { ConfirmReservationSaga } from '../../sagas/confirm-reservation.saga';
 import { Reservation } from '../../../domain/models/reservation.aggregate';
 import { ReservationId } from '../../../domain/value-objects/reservation-id.vo';
 import { SeatAssignment } from '../../../domain/value-objects/seat-assignment.vo';
 import { PassengerInfo } from '../../../domain/value-objects/passenger-info.vo';
 import { Money } from '../../../domain/value-objects/money.vo';
 import { ReservationNotFoundException } from '../../../domain/exceptions/reservation-not-found.exception';
-import { ConfirmSeatsCommand } from '../../../../flight/application/commands/confirm-seats/confirm-seats.command';
 
 class InMemoryReservationRepository implements ReservationRepositoryPort {
   private readonly reservationsById = new Map<string, Reservation>();
@@ -67,38 +61,33 @@ function buildPendingReservation(): Reservation {
 
 describe('ConfirmReservationHandler', () => {
   let reservationRepository: InMemoryReservationRepository;
-  let paymentGateway: {
-    charge: jest.Mock<
-      (input: ProcessPaymentInput) => Promise<ProcessPaymentResult>
-    >;
-    refund: jest.Mock<
-      (input: RefundPaymentInput) => Promise<RefundPaymentResult>
-    >;
-  };
-  let commandBus: { execute: jest.Mock };
+  let confirmReservationSaga: { run: jest.Mock };
   let eventEmitter: { emit: jest.Mock };
   let handler: ConfirmReservationHandler;
 
   beforeEach(() => {
     reservationRepository = new InMemoryReservationRepository();
-    paymentGateway = { charge: jest.fn(), refund: jest.fn() };
-    commandBus = { execute: jest.fn(() => Promise.resolve(undefined)) };
+    confirmReservationSaga = {
+      run: jest.fn(() => Promise.resolve({ paymentId: 'pay_123' })),
+    };
     eventEmitter = { emit: jest.fn() };
     handler = new ConfirmReservationHandler(
       reservationRepository,
-      paymentGateway,
-      commandBus as never,
+      confirmReservationSaga as unknown as ConfirmReservationSaga,
       eventEmitter as unknown as EventEmitter2,
     );
   });
 
-  it('charges payment, confirms the reservation, confirms seats, persists, and dispatches ReservationConfirmed', async () => {
+  it('runs the saga, persists the confirmed reservation, and dispatches ReservationConfirmed', async () => {
     const reservation = buildPendingReservation();
     reservationRepository.seed(reservation);
-    paymentGateway.charge.mockResolvedValueOnce({
-      success: true,
-      paymentId: 'pay_123',
-    });
+    confirmReservationSaga.run.mockImplementationOnce(
+      (target: Reservation, token: string) => {
+        expect(token).toBe('tok_visa');
+        target.confirm('pay_123', new Date());
+        return Promise.resolve({ paymentId: 'pay_123' });
+      },
+    );
     const command = new ConfirmReservationCommand({
       reservationId: reservation.getId().value,
       paymentMethodToken: 'tok_visa',
@@ -106,21 +95,7 @@ describe('ConfirmReservationHandler', () => {
 
     const result = await handler.execute(command);
 
-    expect(paymentGateway.charge).toHaveBeenCalledWith({
-      reservationId: reservation.getId().value,
-      amount: 15000,
-      currency: 'USD',
-      paymentMethodToken: 'tok_visa',
-    });
-
-    expect(commandBus.execute).toHaveBeenCalledTimes(1);
-    const confirmSeatsCommand = commandBus.execute.mock
-      .calls[0][0] as ConfirmSeatsCommand;
-    expect(confirmSeatsCommand).toBeInstanceOf(ConfirmSeatsCommand);
-    expect(confirmSeatsCommand).toMatchObject({
-      flightId: 'flight-1',
-      holdId: 'hold-1',
-    });
+    expect(confirmReservationSaga.run).toHaveBeenCalledTimes(1);
 
     expect(reservationRepository.save).toHaveBeenCalledTimes(1);
     const savedReservation = reservationRepository.save.mock.calls[0][0];
@@ -138,7 +113,7 @@ describe('ConfirmReservationHandler', () => {
     expect(eventName).toBe('ReservationConfirmed');
   });
 
-  it('throws ReservationNotFoundException and does not charge when the reservation does not exist', async () => {
+  it('throws ReservationNotFoundException and does not run the saga when the reservation does not exist', async () => {
     const command = new ConfirmReservationCommand({
       reservationId: ReservationId.create().value,
       paymentMethodToken: 'tok_visa',
@@ -147,17 +122,16 @@ describe('ConfirmReservationHandler', () => {
     await expect(handler.execute(command)).rejects.toThrow(
       ReservationNotFoundException,
     );
-    expect(paymentGateway.charge).not.toHaveBeenCalled();
+    expect(confirmReservationSaga.run).not.toHaveBeenCalled();
     expect(reservationRepository.save).not.toHaveBeenCalled();
   });
 
-  it('bubbles PaymentFailedException and leaves the reservation unconfirmed and unpersisted when payment fails', async () => {
+  it('bubbles PaymentFailedException from the saga and never persists or dispatches', async () => {
     const reservation = buildPendingReservation();
     reservationRepository.seed(reservation);
-    paymentGateway.charge.mockResolvedValue({
-      success: false,
-      failureReason: 'Card declined.',
-    });
+    confirmReservationSaga.run.mockImplementationOnce(() =>
+      Promise.reject(new PaymentFailedException('Card declined.')),
+    );
     const command = new ConfirmReservationCommand({
       reservationId: reservation.getId().value,
       paymentMethodToken: 'tok_fail',
@@ -166,28 +140,25 @@ describe('ConfirmReservationHandler', () => {
     await expect(handler.execute(command)).rejects.toThrow(
       PaymentFailedException,
     );
-    await expect(handler.execute(command)).rejects.toThrow('Card declined.');
 
     expect(reservation.getStatus()).toBe('PENDING');
-    expect(commandBus.execute).not.toHaveBeenCalled();
     expect(reservationRepository.save).not.toHaveBeenCalled();
     expect(eventEmitter.emit).not.toHaveBeenCalled();
   });
 
-  it('refunds the captured payment and throws SeatConfirmationFailedException when seat confirmation fails after payment succeeds', async () => {
+  it('bubbles SeatConfirmationFailedException from the saga and never persists or dispatches', async () => {
     const reservation = buildPendingReservation();
     reservationRepository.seed(reservation);
-    paymentGateway.charge.mockResolvedValueOnce({
-      success: true,
-      paymentId: 'pay_123',
-    });
-    commandBus.execute.mockImplementationOnce(() =>
-      Promise.reject(new Error('Hold expired.')),
+    confirmReservationSaga.run.mockImplementationOnce(() =>
+      Promise.reject(
+        new SeatConfirmationFailedException(
+          reservation.getId().value,
+          'pay_123',
+          true,
+          new Error('Hold expired.'),
+        ),
+      ),
     );
-    paymentGateway.refund.mockResolvedValueOnce({
-      success: true,
-      refundId: 'ref_123',
-    });
     const command = new ConfirmReservationCommand({
       reservationId: reservation.getId().value,
       paymentMethodToken: 'tok_visa',
@@ -196,40 +167,7 @@ describe('ConfirmReservationHandler', () => {
     const error = await handler.execute(command).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(SeatConfirmationFailedException);
-    expect((error as SeatConfirmationFailedException).refunded).toBe(true);
-    expect(paymentGateway.refund).toHaveBeenCalledWith({
-      paymentId: 'pay_123',
-      amount: 15000,
-      currency: 'USD',
-      reason: 'Seat confirmation failed after payment capture.',
-    });
     expect(reservationRepository.save).not.toHaveBeenCalled();
     expect(eventEmitter.emit).not.toHaveBeenCalled();
-  });
-
-  it('marks the exception as unrefunded when the compensating refund also fails', async () => {
-    const reservation = buildPendingReservation();
-    reservationRepository.seed(reservation);
-    paymentGateway.charge.mockResolvedValueOnce({
-      success: true,
-      paymentId: 'pay_123',
-    });
-    commandBus.execute.mockImplementationOnce(() =>
-      Promise.reject(new Error('Hold expired.')),
-    );
-    paymentGateway.refund.mockResolvedValueOnce({
-      success: false,
-      failureReason: 'Refund gateway unavailable.',
-    });
-    const command = new ConfirmReservationCommand({
-      reservationId: reservation.getId().value,
-      paymentMethodToken: 'tok_visa',
-    });
-
-    const error = await handler.execute(command).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(SeatConfirmationFailedException);
-    expect((error as SeatConfirmationFailedException).refunded).toBe(false);
-    expect(reservationRepository.save).not.toHaveBeenCalled();
   });
 });
