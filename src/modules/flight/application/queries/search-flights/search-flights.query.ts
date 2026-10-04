@@ -3,6 +3,7 @@ export interface SearchFlightsQueryProps {
   destination?: string;
   departureDate?: Date;
   minAvailableSeats?: number;
+  searchText?: string;
 }
 
 export class SearchFlightsQuery {
@@ -10,12 +11,14 @@ export class SearchFlightsQuery {
   readonly destination?: string;
   readonly departureDate?: Date;
   readonly minAvailableSeats?: number;
+  readonly searchText?: string;
 
   constructor(props: SearchFlightsQueryProps) {
     this.origin = props.origin;
     this.destination = props.destination;
     this.departureDate = props.departureDate;
     this.minAvailableSeats = props.minAvailableSeats;
+    this.searchText = props.searchText;
     Object.freeze(this);
   }
 }

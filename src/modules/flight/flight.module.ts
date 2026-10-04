@@ -3,8 +3,12 @@ import { APP_FILTER } from '@nestjs/core';
 import { CqrsModule } from '@nestjs/cqrs';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../shared/infrastructure/prisma/prisma.module';
+import { ElasticsearchModule } from '../shared/infrastructure/elasticsearch/elasticsearch.module';
 import { FLIGHT_REPOSITORY_PORT } from './domain/repositories/flight.repository.interface';
 import { PrismaFlightRepository } from './infrastructure/persistence/prisma-flight.repository';
+import { FLIGHT_SEARCH_INDEX_PORT } from './application/ports/flight-search-index.port';
+import { ElasticsearchFlightSearchAdapter } from './infrastructure/search/elasticsearch-flight-search.adapter';
+import { SyncSearchIndexListener } from './infrastructure/search/sync-search-index.listener';
 import { HoldSeatsHandler } from './application/commands/hold-seats/hold-seats.handler';
 import { ConfirmSeatsHandler } from './application/commands/confirm-seats/confirm-seats.handler';
 import { ReleaseSeatsHandler } from './application/commands/release-seats/release-seats.handler';
@@ -15,18 +19,28 @@ import { FlightDomainExceptionFilter } from './infrastructure/http/filters/fligh
 import { ExpireSeatHoldsWorker } from './infrastructure/jobs/expire-seat-holds.worker';
 
 @Module({
-  imports: [PrismaModule, CqrsModule, ScheduleModule.forRoot()],
+  imports: [
+    PrismaModule,
+    ElasticsearchModule,
+    CqrsModule,
+    ScheduleModule.forRoot(),
+  ],
   controllers: [FlightController],
   providers: [
     {
       provide: FLIGHT_REPOSITORY_PORT,
       useClass: PrismaFlightRepository,
     },
+    {
+      provide: FLIGHT_SEARCH_INDEX_PORT,
+      useClass: ElasticsearchFlightSearchAdapter,
+    },
     HoldSeatsHandler,
     ConfirmSeatsHandler,
     ReleaseSeatsHandler,
     GetFlightSeatMapHandler,
     SearchFlightsHandler,
+    SyncSearchIndexListener,
     ExpireSeatHoldsWorker,
     // Scoped to this module's own domain exceptions only (see @Catch(...) in
     // the filter), so binding it via APP_FILTER is safe even though the

@@ -43,6 +43,7 @@ bounded-context boundaries.
 | Language | TypeScript |
 | Database | MongoDB |
 | ORM | [Prisma](https://www.prisma.io/) |
+| Flight search index | [Elasticsearch](https://www.elastic.co/elasticsearch) (read model, seeded from [OpenFlights](https://openflights.org/data.html) reference data) |
 | CQRS / Events | `@nestjs/cqrs`, `@nestjs/event-emitter` |
 | Scheduling | `@nestjs/schedule` (cron workers) |
 | API Docs | Swagger / OpenAPI (`@nestjs/swagger`) |
@@ -71,8 +72,9 @@ state machines, and the architectural decisions behind them — see
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 20+
-- [MongoDB](https://www.mongodb.com/) running as a **replica set** —
-  required by Prisma's MongoDB connector, even for local development
+- [Docker](https://www.docker.com/) (with Compose) — runs the MongoDB
+  **replica set** (required by Prisma's MongoDB connector, even for local
+  development) and Elasticsearch via `docker-compose.yml`
 - npm (or your package manager of choice)
 
 ### Installation
@@ -94,23 +96,40 @@ cp .env.example .env
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | MongoDB connection string. Must include `replicaSet` for a local instance, e.g. `mongodb://localhost:27017/airline_reservation?replicaSet=rs0` |
+| `ELASTICSEARCH_NODE` | Elasticsearch node URL for the flight search index (optional, defaults to `http://localhost:9200`) |
 | `PORT` | Port the HTTP server listens on (optional, defaults to `3000`) |
 
 ### Database Setup
 
-If you don't already have a local MongoDB replica set, the quickest way
-to get one is via Docker:
+`docker-compose.yml` brings up everything the app depends on: a MongoDB
+replica set (required by Prisma's MongoDB connector, even for local dev)
+and a single-node Elasticsearch cluster for flight search.
 
 ```bash
-docker run -d --name airline-mongo -p 27017:27017 mongo:7 --replSet rs0
-docker exec -it airline-mongo mongosh --eval "rs.initiate()"
+docker compose up -d
 ```
 
-Then generate the Prisma client and seed the database with sample flights:
+This starts `mongo` (with a one-shot `mongo-init` service that initiates
+its replica set) and `elasticsearch`, each on their default port
+(`27017`, `9200`) with a named volume so data survives restarts. Bring
+everything down with `docker compose down` (add `-v` to also drop the
+volumes and start fresh). If you already have Mongo or Elasticsearch
+running locally on those ports, stop them first or edit the published
+ports in `docker-compose.yml`.
+
+Then generate the Prisma client, seed Mongo, and build the search index.
+These are two independent steps: `db:seed` builds realistic flights from
+the [OpenFlights](https://openflights.org/data.html) airport/airline/route
+reference data checked into `data/openflights/` (see
+`prisma/openflights/parse-openflights.ts`) and writes them to Mongo;
+`search:seed` then (re)projects whatever is currently in Mongo into the
+Elasticsearch read model (`prisma/seed-search-index.ts`) and can be re-run
+on its own at any time without touching Mongo:
 
 ```bash
 npx prisma generate
 npm run db:seed
+npm run search:seed
 ```
 
 ### Running the App

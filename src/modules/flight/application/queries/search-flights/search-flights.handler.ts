@@ -1,83 +1,50 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
-import { SeatStatus } from '../../../domain/value-objects/seat-status.vo';
-import { projectSeatStatus } from '../shared/project-seat-status';
+import type { FlightSearchIndexPort } from '../../ports/flight-search-index.port';
+import { FLIGHT_SEARCH_INDEX_PORT } from '../../ports/flight-search-index.port';
 import { SearchFlightsQuery } from './search-flights.query';
-import { FlightSearchResultDto } from './flight-search-result.dto';
+import {
+  AirportSummaryDto,
+  FlightSearchResultDto,
+} from './flight-search-result.dto';
 
-// Reads straight off the persistence model instead of loading Flight
-// aggregates — search results are lightweight cards, and filtering by
-// route/date can be pushed down to the database while availability, which
-// depends on real-time hold-expiry projection, is computed per flight.
+// Queries the Elasticsearch-backed read model (see FlightSearchIndexPort)
+// rather than Mongo/Prisma directly: search needs free-text matching across
+// airport/city/country/airline names, which the ES index carries and the
+// Mongo FlightModel does not.
 @QueryHandler(SearchFlightsQuery)
 @Injectable()
 export class SearchFlightsHandler implements IQueryHandler<
   SearchFlightsQuery,
   FlightSearchResultDto[]
 > {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(FLIGHT_SEARCH_INDEX_PORT)
+    private readonly searchIndex: FlightSearchIndexPort,
+  ) {}
 
   async execute(query: SearchFlightsQuery): Promise<FlightSearchResultDto[]> {
-    const where: Prisma.FlightModelWhereInput = {};
-    if (query.origin) {
-      where.originAirport = query.origin;
-    }
-    if (query.destination) {
-      where.destAirport = query.destination;
-    }
-    if (query.departureDate) {
-      const startOfDay = new Date(query.departureDate);
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const endOfDay = new Date(startOfDay);
-      endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
-      where.departureTime = { gte: startOfDay, lt: endOfDay };
-    }
-
-    const flights = await this.prisma.flightModel.findMany({
-      where,
-      orderBy: { departureTime: 'asc' },
+    const documents = await this.searchIndex.search({
+      origin: query.origin,
+      destination: query.destination,
+      departureDate: query.departureDate,
+      minAvailableSeats: query.minAvailableSeats,
+      searchText: query.searchText,
     });
 
-    const now = new Date();
-    const results: FlightSearchResultDto[] = [];
-
-    for (const flight of flights) {
-      let totalAvailableSeats = 0;
-      let startingPrice: number | null = null;
-
-      for (const seat of flight.seats) {
-        if (projectSeatStatus(seat, now) !== SeatStatus.AVAILABLE) {
-          continue;
-        }
-        totalAvailableSeats++;
-        if (startingPrice === null || seat.price < startingPrice) {
-          startingPrice = seat.price;
-        }
-      }
-
-      if (
-        query.minAvailableSeats !== undefined &&
-        totalAvailableSeats < query.minAvailableSeats
-      ) {
-        continue;
-      }
-
-      results.push(
+    return documents.map(
+      (document) =>
         new FlightSearchResultDto({
-          flightId: flight.domainId,
-          flightNumber: flight.flightNumber,
-          origin: flight.originAirport,
-          destination: flight.destAirport,
-          departureTime: flight.departureTime.toISOString(),
-          arrivalTime: flight.arrivalTime.toISOString(),
-          startingPrice: startingPrice ?? 0,
-          totalAvailableSeats,
+          flightId: document.flightId,
+          flightNumber: document.flightNumber,
+          airlineName: document.airlineName,
+          origin: new AirportSummaryDto(document.origin),
+          destination: new AirportSummaryDto(document.destination),
+          departureTime: document.departureTime,
+          arrivalTime: document.arrivalTime,
+          startingPrice: document.startingPrice ?? 0,
+          totalAvailableSeats: document.totalAvailableSeats,
         }),
-      );
-    }
-
-    return results;
+    );
   }
 }

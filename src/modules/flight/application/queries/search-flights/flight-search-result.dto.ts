@@ -1,5 +1,37 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class AirportSummaryDto {
+  @ApiProperty({ description: 'IATA code of the airport.', example: 'JFK' })
+  readonly iata: string;
+
+  @ApiProperty({
+    description: 'Airport name.',
+    example: 'John F Kennedy International Airport',
+  })
+  readonly name: string;
+
+  @ApiProperty({ description: 'City the airport serves.', example: 'New York' })
+  readonly city: string;
+
+  @ApiProperty({
+    description: 'Country the airport is in.',
+    example: 'United States',
+  })
+  readonly country: string;
+
+  constructor(props: {
+    iata: string;
+    name: string;
+    city: string;
+    country: string;
+  }) {
+    this.iata = props.iata;
+    this.name = props.name;
+    this.city = props.city;
+    this.country = props.country;
+  }
+}
+
 export class FlightSearchResultDto {
   @ApiProperty({ description: 'Identifier of the flight.' })
   readonly flightId: string;
@@ -7,14 +39,17 @@ export class FlightSearchResultDto {
   @ApiProperty({ description: 'Flight number.', example: 'AA1234' })
   readonly flightNumber: string;
 
-  @ApiProperty({ description: 'Origin airport (IATA code).', example: 'JFK' })
-  readonly origin: string;
-
   @ApiProperty({
-    description: 'Destination airport (IATA code).',
-    example: 'LAX',
+    description: 'Name of the operating airline.',
+    example: 'American Airlines',
   })
-  readonly destination: string;
+  readonly airlineName: string;
+
+  @ApiProperty({ description: 'Origin airport.', type: AirportSummaryDto })
+  readonly origin: AirportSummaryDto;
+
+  @ApiProperty({ description: 'Destination airport.', type: AirportSummaryDto })
+  readonly destination: AirportSummaryDto;
 
   @ApiProperty({
     description: 'ISO 8601 departure timestamp.',
@@ -43,8 +78,9 @@ export class FlightSearchResultDto {
   constructor(props: {
     flightId: string;
     flightNumber: string;
-    origin: string;
-    destination: string;
+    airlineName: string;
+    origin: AirportSummaryDto;
+    destination: AirportSummaryDto;
     departureTime: string;
     arrivalTime: string;
     startingPrice: number;
@@ -52,6 +88,7 @@ export class FlightSearchResultDto {
   }) {
     this.flightId = props.flightId;
     this.flightNumber = props.flightNumber;
+    this.airlineName = props.airlineName;
     this.origin = props.origin;
     this.destination = props.destination;
     this.departureTime = props.departureTime;

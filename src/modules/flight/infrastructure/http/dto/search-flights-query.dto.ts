@@ -43,4 +43,13 @@ export class SearchFlightsQueryDto {
   @IsInt({ message: 'minSeats must be an integer.' })
   @Min(0, { message: 'minSeats must not be negative.' })
   readonly minSeats?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Free-text match against origin/destination airport name, city, country, and airline name (e.g. "Paris" or "Lufthansa").',
+    example: 'Paris',
+  })
+  @IsOptional()
+  @IsString({ message: 'q must be a string.' })
+  readonly q?: string;
 }

@@ -58,6 +58,7 @@ export class FlightController {
         destination: dto.destination,
         departureDate: dto.date ? new Date(dto.date) : undefined,
         minAvailableSeats: dto.minSeats,
+        searchText: dto.q,
       }),
     );
   }

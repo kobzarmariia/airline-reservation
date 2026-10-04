@@ -1,0 +1,93 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: airline-mongo
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: mongosh --quiet --eval "db.adminCommand('ping')"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # One-shot: initiates the single-node replica set `mongo` needs (Prisma's
+  # MongoDB connector requires one, even for local dev — see schema.prisma).
+  # Advertises the member as `localhost:27017` rather than the in-network
+  # service name `mongo:27017`, since the app itself runs on the host, not
+  # in this compose network, and connects via the published port.
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mongosh --host mongo:27017 --quiet --eval "
+          try {
+            rs.status();
+            print('Replica set already initiated.');
+          } catch (e) {
+            rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] });
+            print('Replica set initiated.');
+          }
+        "
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.0
+    container_name: airline-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.1.0
+    container_name: airline-kibana
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+
+  mongo-express:
+    image: mongo-express:1
+    container_name: airline-mongo-express
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      # directConnection bypasses replica-set topology discovery, which
+      # would otherwise try to resolve the member's advertised address
+      # (`localhost:27017`, meant for the host-side app — see mongo-init)
+      # and fail to resolve from inside this container's network.
+      - ME_CONFIG_MONGODB_URL=mongodb://mongo:27017/?directConnection=true
+      - ME_CONFIG_BASICAUTH=false
+    ports:
+      - "8081:8081"
+
+volumes:
+  mongo-data:
+  es-data:
