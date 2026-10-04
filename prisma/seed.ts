@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
 import { Flight } from '../src/modules/flight/domain/models/flight.aggregate';
 import { Seat } from '../src/modules/flight/domain/models/seat.entity';
@@ -14,21 +15,47 @@ import { SeatNumber } from '../src/modules/flight/domain/value-objects/seat-numb
 import { SeatClass } from '../src/modules/flight/domain/value-objects/seat-class.vo';
 import { SeatStatus } from '../src/modules/flight/domain/value-objects/seat-status.vo';
 import { FlightMapper } from '../src/modules/flight/infrastructure/persistence/flight.mapper';
+import {
+  OpenFlightsRoute,
+  parseAirlines,
+  parseAirports,
+  parseRoutes,
+} from './openflights/parse-openflights';
 
 const prisma = new PrismaClient();
 
-const FLIGHT_COUNT = 30;
+const FLIGHT_COUNT = 5000;
 
-const AIRLINES = [
-  'AA', 'DL', 'UA', 'BA', 'LH', 'AF', 'EK', 'QR', 'SQ', 'JL',
-  'NH', 'KL', 'LX', 'IB', 'TK', 'CX', 'QF', 'LA', 'AC', 'VS',
-];
+const OPENFLIGHTS_DATA_DIR = join(__dirname, '..', 'data', 'openflights');
+const AIRPORTS = parseAirports(join(OPENFLIGHTS_DATA_DIR, 'airports.dat'));
+const AIRLINES = parseAirlines(join(OPENFLIGHTS_DATA_DIR, 'airlines.dat'));
 
-const AIRPORTS = [
-  'JFK', 'LAX', 'ORD', 'ATL', 'DFW', 'DEN', 'SFO', 'SEA', 'MIA', 'BOS',
-  'LHR', 'CDG', 'FRA', 'AMS', 'MAD', 'FCO', 'DXB', 'DOH', 'SIN', 'HND',
-  'NRT', 'ICN', 'SYD', 'GRU', 'YYZ', 'ZRH', 'MUC', 'BCN', 'IST', 'HKG',
-];
+// FlightNumber only accepts a two-letter airline prefix (see
+// flight-number.vo.ts), so routes operated by alphanumeric IATA codes
+// (common among low-cost carriers, e.g. "5J", "W6") are excluded here.
+const AIRLINE_IATA_PATTERN = /^[A-Z]{2}$/;
+
+const ROUTES: OpenFlightsRoute[] = dedupeRoutes(
+  parseRoutes(join(OPENFLIGHTS_DATA_DIR, 'routes.dat')).filter(
+    (route) =>
+      AIRLINE_IATA_PATTERN.test(route.airlineIata) &&
+      AIRLINES.has(route.airlineIata) &&
+      AIRPORTS.has(route.originIata) &&
+      AIRPORTS.has(route.destinationIata),
+  ),
+);
+
+function dedupeRoutes(routes: OpenFlightsRoute[]): OpenFlightsRoute[] {
+  const seen = new Set<string>();
+  const unique: OpenFlightsRoute[] = [];
+  for (const route of routes) {
+    const key = `${route.airlineIata}-${route.originIata}-${route.destinationIata}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(route);
+  }
+  return unique;
+}
 
 // A handful of representative aircraft cabin layouts, chosen per flight to
 // keep the ECONOMY/BUSINESS/FIRST mix realistic (e.g. regional hops rarely
@@ -65,13 +92,8 @@ function pick<T>(items: readonly T[]): T {
   return items[randomInt(0, items.length - 1)];
 }
 
-function randomRoute(): { origin: string; destination: string } {
-  const origin = pick(AIRPORTS);
-  let destination = pick(AIRPORTS);
-  while (destination === origin) {
-    destination = pick(AIRPORTS);
-  }
-  return { origin, destination };
+function pickRoute(): OpenFlightsRoute {
+  return pick(ROUTES);
 }
 
 function randomSchedule(): { departureTime: Date; arrivalTime: Date } {
@@ -131,18 +153,17 @@ function buildSeats(capacity: CapacityBySeatClass): Seat[] {
   return seats;
 }
 
-function buildFlight(): Flight {
+function buildFlight(route: OpenFlightsRoute): Flight {
   const flightNumber = FlightNumber.create(
-    `${pick(AIRLINES)}${randomInt(100, 9999)}`,
+    `${route.airlineIata}${randomInt(100, 9999)}`,
   );
-  const { origin, destination } = randomRoute();
   const { departureTime, arrivalTime } = randomSchedule();
   const capacityBySeatClass = pick(AIRCRAFT_PROFILES);
 
   return Flight.reconstitute(
     FlightId.generate(),
     flightNumber,
-    Route.create(origin, destination),
+    Route.create(route.originIata, route.destinationIata),
     Schedule.create(departureTime, arrivalTime),
     Capacity.create(capacityBySeatClass),
     buildSeats(capacityBySeatClass),
@@ -150,12 +171,17 @@ function buildFlight(): Flight {
 }
 
 async function main(): Promise<void> {
+  console.log(
+    `Loaded ${AIRPORTS.size} airports, ${AIRLINES.size} airlines, ${ROUTES.length} usable direct routes from OpenFlights.`,
+  );
+
   console.log('Clearing existing flights...');
   await prisma.flightModel.deleteMany();
 
   console.log(`Seeding ${FLIGHT_COUNT} flights...`);
   for (let i = 0; i < FLIGHT_COUNT; i++) {
-    const flight = buildFlight();
+    const route = pickRoute();
+    const flight = buildFlight(route);
     const data = FlightMapper.toPersistence(flight);
     await prisma.flightModel.create({ data });
     console.log(
@@ -163,7 +189,9 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log('Done.');
+  console.log(
+    'Done. Run `npm run search:seed` to (re)index the Elasticsearch flight search read model.',
+  );
 }
 
 main()
