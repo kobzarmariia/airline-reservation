@@ -27,10 +27,13 @@ import { GetFlightSeatMapQuery } from '../../application/queries/get-flight-seat
 import { FlightSeatMapDto } from '../../application/queries/get-flight-seat-map/flight-seat-map.dto';
 import { SearchFlightsQuery } from '../../application/queries/search-flights/search-flights.query';
 import { FlightSearchResultDto } from '../../application/queries/search-flights/flight-search-result.dto';
+import { FindCheapestRouteQuery } from '../../application/queries/find-cheapest-route/find-cheapest-route.query';
+import { CheapestRouteDto } from '../../application/queries/find-cheapest-route/cheapest-route.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import { HoldSeatsResponseDto } from './dto/hold-seats-response.dto';
 import { ConfirmSeatsResponseDto } from './dto/confirm-seats-response.dto';
 import { SearchFlightsQueryDto } from './dto/search-flights-query.dto';
+import { FindCheapestRouteQueryDto } from './dto/find-cheapest-route-query.dto';
 
 @ApiTags('flights')
 @Controller('flights')
@@ -59,6 +62,32 @@ export class FlightController {
         departureDate: dto.date ? new Date(dto.date) : undefined,
         minAvailableSeats: dto.minSeats,
         searchText: dto.q,
+      }),
+    );
+  }
+
+  @Get('routes')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Find the cheapest itinerary between two airports/cities/countries, with at most maxStops intermediate stops.',
+  })
+  @ApiOkResponse({
+    description:
+      'The cheapest itinerary found, or null if none exists within maxStops.',
+    type: CheapestRouteDto,
+  })
+  async findCheapestRoute(
+    @Query() dto: FindCheapestRouteQueryDto,
+  ): Promise<CheapestRouteDto | null> {
+    return this.queryBus.execute<
+      FindCheapestRouteQuery,
+      CheapestRouteDto | null
+    >(
+      new FindCheapestRouteQuery({
+        origin: dto.origin,
+        destination: dto.destination,
+        maxStops: dto.maxStops ?? 2,
       }),
     );
   }
